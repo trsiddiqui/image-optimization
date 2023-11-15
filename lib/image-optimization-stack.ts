@@ -9,10 +9,10 @@ import { createHash } from 'crypto';
 
 // Stack Parameters
 
-// related to architecture. If set to false, transformed images are not stored in S3, and all image requests land on Lambda
-var STORE_TRANSFORMED_IMAGES = 'true';
 // Parameters of S3 bucket where original images are stored
 var S3_IMAGE_BUCKET_NAME: string;
+// Parameters of S3 bucket where transformed images are stored
+var S3_TRANSFORMED_IMAGE_BUCKET_NAME: string;
 // CloudFront parameters
 var CLOUDFRONT_ORIGIN_SHIELD_REGION = getOriginShieldRegion(process.env.AWS_REGION || process.env.CDK_DEFAULT_REGION || 'us-east-1');
 var CLOUDFRONT_CORS_ENABLED = 'true';
@@ -45,10 +45,10 @@ export class ImageOptimizationStack extends Stack {
     super(scope, id, props);
 
     // Change stack parameters based on provided context
-    STORE_TRANSFORMED_IMAGES = this.node.tryGetContext('STORE_TRANSFORMED_IMAGES') || STORE_TRANSFORMED_IMAGES;
     S3_TRANSFORMED_IMAGE_EXPIRATION_DURATION = this.node.tryGetContext('S3_TRANSFORMED_IMAGE_EXPIRATION_DURATION') || S3_TRANSFORMED_IMAGE_EXPIRATION_DURATION;
     S3_TRANSFORMED_IMAGE_CACHE_TTL = this.node.tryGetContext('S3_TRANSFORMED_IMAGE_CACHE_TTL') || S3_TRANSFORMED_IMAGE_CACHE_TTL;
-    S3_IMAGE_BUCKET_NAME = this.node.tryGetContext('S3_IMAGE_BUCKET_NAME') || S3_IMAGE_BUCKET_NAME;
+    S3_IMAGE_BUCKET_NAME = this.node.tryGetContext('S3_IMAGE_BUCKET_NAME');
+    S3_TRANSFORMED_IMAGE_BUCKET_NAME = this.node.tryGetContext('S3_TRANSFORMED_IMAGE_BUCKET_NAME');
     CLOUDFRONT_ORIGIN_SHIELD_REGION = this.node.tryGetContext('CLOUDFRONT_ORIGIN_SHIELD_REGION') || CLOUDFRONT_ORIGIN_SHIELD_REGION;
     CLOUDFRONT_CORS_ENABLED = this.node.tryGetContext('CLOUDFRONT_CORS_ENABLED') || CLOUDFRONT_CORS_ENABLED;
     LAMBDA_MEMORY = this.node.tryGetContext('LAMBDA_MEMORY') || LAMBDA_MEMORY;
@@ -63,67 +63,21 @@ export class ImageOptimizationStack extends Stack {
     var transformedImageBucket;
     var sampleWebsiteDelivery;
 
-    if (S3_IMAGE_BUCKET_NAME) {
-      originalImageBucket = s3.Bucket.fromBucketName(this, 'imported-original-image-bucket', S3_IMAGE_BUCKET_NAME);
-      new CfnOutput(this, 'OriginalImagesS3Bucket', {
-        description: 'S3 bucket where original images are stored',
-        value: originalImageBucket.bucketName
-      });
-    } else {
-      originalImageBucket = new s3.Bucket(this, 's3-sample-original-image-bucket', {
-        removalPolicy: RemovalPolicy.DESTROY,
-        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-        encryption: s3.BucketEncryption.S3_MANAGED,
-        enforceSSL: true,
-        autoDeleteObjects: true,
-      });
-      new s3deploy.BucketDeployment(this, 'DeployWebsite', {
-        sources: [s3deploy.Source.asset('./image-sample')],
-        destinationBucket: originalImageBucket,
-        destinationKeyPrefix: 'images/rio/',
-      });
-      var sampleWebsiteBucket = new s3.Bucket(this, 's3-sample-website-bucket', {
-        removalPolicy: RemovalPolicy.DESTROY,
-        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-        encryption: s3.BucketEncryption.S3_MANAGED,
-        enforceSSL: true,
-        autoDeleteObjects: true,
-      });
-
-      sampleWebsiteDelivery = new cloudfront.Distribution(this, 'websiteDeliveryDistribution', {
-        comment: 'image optimization - sample website',
-        defaultRootObject: 'index.html',
-        defaultBehavior: {
-          origin: new origins.S3Origin(sampleWebsiteBucket),
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        }
-      });
-      new CfnOutput(this, 'SampleWebsiteDomain', {
-        description: 'Sample website domain',
-        value: sampleWebsiteDelivery.distributionDomainName
-      });
-      new CfnOutput(this, 'SampleWebsiteS3Bucket', {
-        description: 'S3 bucket use by the sample website',
-        value: sampleWebsiteBucket.bucketName
-      });
-      new CfnOutput(this, 'OriginalImagesS3Bucket', {
-        description: 'S3 bucket where original images are stored',
-        value: originalImageBucket.bucketName
-      });
+    if (!S3_IMAGE_BUCKET_NAME || !S3_TRANSFORMED_IMAGE_BUCKET_NAME) {
+      throw new Error(`Deploy using a bucket name. Here is a sample command "cdk deploy -c S3_IMAGE_BUCKET_NAME='taha-test-bucket-images' -c S3_TRANSFORMED_IMAGE_BUCKET_NAME='taha-test-bucket-transformed-images' -c S3_TRANSFORMED_IMAGE_EXPIRATION_DURATION='90' -c S3_TRANSFORMED_IMAGE_CACHE_TTL='max-age=31622400'"`)
     }
 
-    // create bucket for transformed images if enabled in the architecture
-    if (STORE_TRANSFORMED_IMAGES === 'true') {
-      transformedImageBucket = new s3.Bucket(this, 's3-transformed-image-bucket', {
-        removalPolicy: RemovalPolicy.DESTROY,
-        autoDeleteObjects: true,
-        lifecycleRules: [
-          {
-            expiration: Duration.days(parseInt(S3_TRANSFORMED_IMAGE_EXPIRATION_DURATION)),
-          },
-        ],
-      });
-    }
+    originalImageBucket = s3.Bucket.fromBucketName(this, 'imported-original-image-bucket', S3_IMAGE_BUCKET_NAME);
+    new CfnOutput(this, 'OriginalImagesS3Bucket', {
+      description: 'S3 bucket where original images are stored',
+      value: originalImageBucket.bucketName
+    });
+
+    transformedImageBucket = s3.Bucket.fromBucketName(this, 's3-transformed-image-bucket', S3_TRANSFORMED_IMAGE_BUCKET_NAME);
+    new CfnOutput(this, 'TransformedImagesS3Bucket', {
+      description: 'S3 bucket where transformed images are stored',
+      value: transformedImageBucket.bucketName
+    });
 
     // prepare env variable for Lambda 
     var lambdaEnv: LambdaEnv = {

@@ -1,3 +1,5 @@
+Adopted from https://github.com/aws-samples/image-optimization
+
 ## Image Optimization
 
 Images are usually the heaviest components of a web page, both in terms of bytes and number of HTTP requests. Optimizing images on your website is critical to improve your users’ experience, reduce delivery costs and enhance your position in search engine ranking. For example, Google’s Largest Contentful Paint metric in their search ranking algorithm is highly impacted by how much you optimize the images on your website. In the solution, we provide you with a simple and performant solution for image optimization using serverless components such as Amazon CloudFront, Amazon S3 and AWS Lambda.
@@ -6,7 +8,10 @@ The proposed architecture is suitable for most common use cases. Image transform
 
 <img src="architecture.png" width="900">
 
-1. The user sends a HTTP request for an image with specific transformations, such as encoding and size. The transformations are encoded in the URL, more precisely as query parameters. An example URL would look like this: https://examples.com/images/cats/mycat.jpg?format=webp&width=200.
+1. The user sends a HTTP request for an image with specific transformations, such as encoding and size. The transformations are encoded in the URL, more precisely as query parameters. An example URL would look like this: 
+
+https://examples.com/images/cats/mycat.jpg?width=200&format=webp&quality=80&height=200&width=200.
+
 2. The request is processed by a nearby CloudFront edge location providing the best performance. Before passing the request upstream, a CloudFront Function is executed on viewer request event to rewrite the request URL. CloudFront Functions is a feature of CloudFront that allows you to write lightweight functions in JavaScript for high-scale, latency-sensitive CDN customizations. In our architecture, we rewrite the URL to validate the requested transformations and normalize the URL by ordering transformations and convert them to lower case to increase the cache hit ratio. When an automatic transformation is requested, the function also decides about the best one to apply. For example, if the user asks for the most optimized image format (JPEG, WebP, or AVIF) using the directive format=auto, CloudFront Function will select the best format based on the Accept header present in the request.
 3. If the requested image is already cached in CloudFront then there will be a cache hit and the image is returned from CloudFront cache. To increase the cache hit ratio, we enable Origin shield, a feature of CloudFront that acts as an additional layer of caching before the origin, to further offload it from requests. If the Image is not in CloudFront cache, then the request will be forwarded to an S3 bucket, which is created to store the transformed images. If the requested image is already transformed and stored in S3, then it is simply served and cached in CloudFront.
 4. Otherwise, S3 will respond with a 403 error code, which is detected by CloudFront’s Origin Failover. Thanks to this native feature, CloudFront retries the same URL but this time using the secondary origin based on Lambda function URL. When invoked, the Lambda function downloads the original image from another S3 bucket, where original images are stored, transforms it using Sharp library, stores the transformed image in S3, then serve it through CloudFront where it will be cached for future requests.
@@ -19,20 +24,26 @@ Note the following:
 ## Deploy the solution using CDK
 AWS CDK is an open-source software development framework used to define cloud infrastructure in code and provision it through AWS CloudFormation. Follow these steps in your command line to deploy the image optimization solution with CDK, using the region and account information configured in your AWS CLI.
 
+1. Create two buckets bucket-original-images and bucket-optimized-images (public access)
+2. Make sure aws credentials are configured in ~/.aws/config
 ```
-git clone https://github.com/aws-samples/image-optimization.git 
-cd image-optimization
+[default]
+aws_access_key_id=AKIA6NS3BSJJGAGMQKCK
+aws_secret_access_key=VIixUbD/op64ZxrqOdV9pUEXMmJGb/jxYPFe4LOd
+```
+3. Run the following commands on the root
+```
 npm install
 cdk bootstrap
 npm run build
-cdk deploy
+cdk deploy -c S3_IMAGE_BUCKET_NAME='bucket-original-images' -c S3_TRANSFORMED_IMAGE_BUCKET_NAME='bucket-optimized-images' -c S3_TRANSFORMED_IMAGE_EXPIRATION_DURATION='90' -c S3_TRANSFORMED_IMAGE_CACHE_TTL='max-age=31622400'
 ```
 
 Note that the solution deploys the latest version of the Sharp library. If a new version has been released, and you'd like to updgrade to the new version (for ex to patch a [cve](https://github.com/lovell/sharp/issues/3798)), rebuild and redeploy using CDK.
 
 When the deployment is completed within minutes, the CDK output will include the domain name of the CloudFront distribution created for image optimization (ImageDeliveryDomain =YOURDISTRIBUTION.cloudfront.net). The stack will include an S3 bucket with sample images (OriginalImagesS3Bucket = YourS3BucketWithOriginalImagesGeneratedName). To verify that it is working properly, test the following optimized image URL https:// YOURDISTRIBUTION.cloudfront.net/images/rio/1.jpeg?format=auto&width=300.
 
-Note that when deploying in production, it’s recommended to use an existing S3 bucket where your images are stored. To do that, deploy the stack in the same region of your S3 bucket, using the following parameter: cdk deploy -c S3_IMAGE_BUCKET_NAME=’YOUR_S3_BUCKET_NAME’. The solution allows you to configure other parameters such as whether you want to store transformed images in S3 (STORE_TRANSFORMED_IMAGES), the duration after which transformed images are automatically removed from S3 (S3_TRANSFORMED_IMAGE_EXPIRATION_DURATION), and the Cache-Control header used with transformed images (S3_TRANSFORMED_IMAGE_CACHE_TTL).
+Note that when deploying in production, it’s recommended to use an existing S3 bucket where your images are stored. To do that, deploy the stack in the same region of your S3 bucket, using the following parameter: cdk deploy -c S3_IMAGE_BUCKET_NAME='taha-test-bucket-original-images' -c S3_TRANSFORMED_IMAGE_BUCKET_NAME='taha-test-bucket-images' -c S3_TRANSFORMED_IMAGE_EXPIRATION_DURATION='90' -c S3_TRANSFORMED_IMAGE_CACHE_TTL='max-age=31622400'.
 
 ## Clean up resources
 
