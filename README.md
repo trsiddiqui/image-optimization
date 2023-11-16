@@ -34,6 +34,7 @@ aws_secret_access_key=<AWS_ACCESS_KEY_SECRET>
 3. Run the following commands on the root
 ```
 npm install
+sudo npm install -g aws-cdk
 cdk bootstrap -c S3_IMAGE_BUCKET_NAME='bucket-original-images' -c S3_TRANSFORMED_IMAGE_BUCKET_NAME='bucket-optimized-images' -c S3_TRANSFORMED_IMAGE_EXPIRATION_DURATION='90' -c S3_TRANSFORMED_IMAGE_CACHE_TTL='max-age=31622400'
 npm run build
 cdk deploy -c S3_IMAGE_BUCKET_NAME='bucket-original-images' -c S3_TRANSFORMED_IMAGE_BUCKET_NAME='bucket-optimized-images' -c S3_TRANSFORMED_IMAGE_EXPIRATION_DURATION='90' -c S3_TRANSFORMED_IMAGE_CACHE_TTL='max-age=31622400'
