@@ -5,7 +5,6 @@ const AWS = require('aws-sdk');
 const https = require('https');
 const Sharp = require('sharp');
 
-
 const S3 = new AWS.S3({
   signatureVersion: 'v4',
   httpOptions: { agent: new https.Agent({ keepAlive: true }) },
@@ -14,16 +13,12 @@ const S3_ORIGINAL_IMAGE_BUCKET = process.env.originalImageBucketName;
 const S3_TRANSFORMED_IMAGE_BUCKET = process.env.transformedImageBucketName;
 const TRANSFORMED_IMAGE_CACHE_TTL = process.env.transformedImageCacheTTL;
 const SECRET_KEY = process.env.secretKey;
-const LOG_TIMING = process.env.logTiming;
 const ALLOWED_PRESETS = {
-  icon: 'icon',
   thumb: 'thumb',
   small: 'small',
   medium: 'medium',
   large: 'large',
   xlarge: 'xlarge',
-  icon_wide: 'icon_wide',
-  thumb_wide: 'thumb_wide',
   small_wide: 'small_wide',
   medium_wide: 'medium_wide',
   large_wide: 'large_wide',
@@ -32,6 +27,14 @@ const ALLOWED_PRESETS = {
 };
 
 exports.handler = async (event) => {
+  // First validate if the request is coming from CloudFront
+  if (!event.headers['x-origin-secret-header'] || !(event.headers['x-origin-secret-header'] === SECRET_KEY)) {
+    return sendError(403, 'Request unauthorized', event);
+  }
+  // Validate if this is a GET request
+  if (!event.requestContext || !event.requestContext.http || !(event.requestContext.http.method === 'GET')) {
+    return sendError(400, 'Only GET method is supported', event);
+  }
   // An example of expected path is /images/rio/1.jpeg/format=auto,width=100 or /images/rio/1.jpeg/original where /images/rio/1.jpeg is the path of the original image
   var imagePathArray = event.requestContext.http.path.split('/');
   // get the requested image operations
@@ -39,9 +42,6 @@ exports.handler = async (event) => {
   // get the original image path images/rio/1.jpg
   imagePathArray.shift();
   var originalImagePath = imagePathArray.join('/');
-  // timing variable
-  var timingLog = "perf ";
-  var startTime = performance.now();
   // Downloading original image
   let originalImage;
   let contentType;
@@ -56,8 +56,6 @@ exports.handler = async (event) => {
   const imageMetadata = await transformedImage.metadata();
   //  execute the requested operations
   const operationsJSON = Object.fromEntries(operationsPrefix.split(',').map(operation => operation.split('=')));
-  timingLog = timingLog + parseInt(performance.now() - startTime) + ' ';
-  startTime = performance.now();
   try {
     let format = 'jpeg';
     let quality = '80';
@@ -65,12 +63,6 @@ exports.handler = async (event) => {
     var resizingOptions = {};
     if (operationsJSON['preset']) {
       switch (operationsJSON['preset']) {
-        case ALLOWED_PRESETS.icon:
-          resizingOptions.width = 32;
-          resizingOptions.height = 32;
-          format = 'jpeg';
-          quality = '10';
-          break;
         case ALLOWED_PRESETS.thumb:
           resizingOptions.width = 50;
           resizingOptions.height = 50;
@@ -100,18 +92,6 @@ exports.handler = async (event) => {
           resizingOptions.height = 2048;
           format = 'jpeg';
           quality = '90';
-          break;
-        case ALLOWED_PRESETS.icon_wide:
-          resizingOptions.width = 32;
-          resizingOptions.height = 18;
-          format = 'jpeg';
-          quality = '10';
-          break;
-        case ALLOWED_PRESETS.thumb_wide:
-          resizingOptions.width = 50;
-          resizingOptions.height = 28;
-          format = 'jpeg';
-          quality = '20';
           break;
         case ALLOWED_PRESETS.large_wide:
           resizingOptions.width = 1024;
@@ -185,8 +165,6 @@ exports.handler = async (event) => {
   } catch (error) {
     return sendError(500, 'error transforming image', error);
   }
-  timingLog = timingLog + parseInt(performance.now() - startTime) + ' ';
-  startTime = performance.now();
   // upload transformed image back to S3 if required in the architecture
   if (S3_TRANSFORMED_IMAGE_BUCKET) {
     try {
@@ -203,8 +181,6 @@ exports.handler = async (event) => {
       sendError('APPLICATION ERROR', 'Could not upload transformed image to S3', error);
     }
   }
-  timingLog = timingLog + parseInt(performance.now() - startTime) + ' ';
-  if (LOG_TIMING === 'true') console.log(timingLog);
   // return transformed image
   return {
     statusCode: 200,
