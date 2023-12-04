@@ -201,7 +201,7 @@ export class ImageOptimizationStack extends Stack {
     var imageDeliveryCacheBehaviorConfig: ImageDeliveryCacheBehaviorConfig = {
       origin: imageOrigin,
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-      cachePolicy: new cloudfront.CachePolicy(this, `ImageCachePolicy${this.node.addr}`, {
+      cachePolicy: new cloudfront.CachePolicy(this, `ImgCachePolicy${this.node.addr}`, {
         defaultTtl: Duration.hours(24),
         maxTtl: Duration.days(365),
         minTtl: Duration.seconds(0),
@@ -215,8 +215,8 @@ export class ImageOptimizationStack extends Stack {
 
     if (CLOUDFRONT_CORS_ENABLED === 'true') {
       // Creating a custom response headers policy. CORS allowed for all origins.
-      const imageResponseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, `ResponseHeadersPolicy${this.node.addr}`, {
-        responseHeadersPolicyName: 'ImageResponsePolicy',
+      const imageResponseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, `ResponseHdrsPolicy${this.node.addr}`, {
+        responseHeadersPolicyName: 'ImgResponsePolicy',
         corsBehavior: {
           accessControlAllowCredentials: false,
           accessControlAllowHeaders: ['*'],
@@ -235,7 +235,7 @@ export class ImageOptimizationStack extends Stack {
       });
       imageDeliveryCacheBehaviorConfig.responseHeadersPolicy = imageResponseHeadersPolicy;
     }
-    const imageDelivery = new cloudfront.Distribution(this, 'imageDeliveryDistribution', {
+    const imageDelivery = new cloudfront.Distribution(this, 'imgDeliveryDistribution', {
       comment: 'image optimization - image delivery',
       defaultBehavior: imageDeliveryCacheBehaviorConfig
     });
