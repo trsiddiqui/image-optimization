@@ -1,11 +1,21 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-const AWS = require('aws-sdk');
+const { S3 } = require('@aws-sdk/client-s3');
+
 const https = require('https');
 const Sharp = require('sharp');
 
-const S3 = new AWS.S3({ signatureVersion: 'v4', httpOptions: { agent: new https.Agent({ keepAlive: true }) } });
+const S3 = new S3({
+    // The key signatureVersion is no longer supported in v3, and can be removed.
+    // @deprecated SDK v3 only supports signature v4.
+    signatureVersion: 'v4',
+
+    // The transformation for httpOptions is not implemented.
+    // Refer to UPGRADING.md on aws-sdk-js-v3 for changes needed.
+    // Please create/upvote feature request on aws-sdk-js-codemod for httpOptions.
+    httpOptions: { agent: new https.Agent({ keepAlive: true }) },
+});
 const S3_ORIGINAL_IMAGE_BUCKET = process.env.originalImageBucketName;
 const S3_TRANSFORMED_IMAGE_BUCKET = process.env.transformedImageBucketName;
 const TRANSFORMED_IMAGE_CACHE_TTL = process.env.transformedImageCacheTTL;
@@ -31,7 +41,7 @@ exports.handler = async (event) => {
     let originalImage;
     let contentType;
     try {
-        originalImage = await S3.getObject({ Bucket: S3_ORIGINAL_IMAGE_BUCKET, Key: originalImagePath }).promise();
+        originalImage = await S3.getObject({ Bucket: S3_ORIGINAL_IMAGE_BUCKET, Key: originalImagePath });
         contentType = originalImage.ContentType;
     } catch (error) {
         return sendError(500, 'error downloading original image', error);
@@ -86,7 +96,7 @@ exports.handler = async (event) => {
                 Metadata: {
                     'cache-control': TRANSFORMED_IMAGE_CACHE_TTL,
                 },
-            }).promise();
+            });
         } catch (error) {
             sendError('APPLICATION ERROR', 'Could not upload transformed image to S3', error);
         }
